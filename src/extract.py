@@ -20,11 +20,11 @@ class YouTubeExtractor:
     
     CATEGORIES = {
         '10': 'Music',
+        '17': 'Sports',
         '20': 'Gaming',
         '22': 'People & Blogs',
         '24': 'Entertainment',
         '25': 'News & Politics',
-        '27': 'Education',
         '28': 'Science & Technology'
     }
     
@@ -37,6 +37,7 @@ class YouTubeExtractor:
     
     def search_videos(self, category_id: str, max_results: int = 50) -> List[str]:
         """Search for popular videos in a category."""
+        # Use chart=mostPopular which actually works, then filter by category
         try:
             request = self.youtube.videos().list(
                 part='snippet',
@@ -54,21 +55,28 @@ class YouTubeExtractor:
     def get_video_details(self, video_ids: List[str]) -> List[Dict]:
         """Fetch detailed info for video IDs."""
         videos = []
+        
+        # API allows max 50 videos per request
         for i in range(0, len(video_ids), 50):
             batch = video_ids[i:i+50]
+            
             try:
                 request = self.youtube.videos().list(
                     part='snippet,contentDetails,statistics',
                     id=','.join(batch)
                 )
                 response = request.execute()
+                
                 for item in response.get('items', []):
                     video_data = self._parse_video(item)
                     videos.append(video_data)
-                time.sleep(0.1)
+                
+                time.sleep(0.1)  # rate limiting
+                
             except HttpError as e:
                 print(f"Error fetching video details: {e}")
                 continue
+        
         return videos
     
     def get_channel_stats(self, channel_id: str) -> Dict:
@@ -79,6 +87,7 @@ class YouTubeExtractor:
                 id=channel_id
             )
             response = request.execute()
+            
             if response.get('items'):
                 stats = response['items'][0]['statistics']
                 return {
@@ -88,6 +97,7 @@ class YouTubeExtractor:
                 }
         except HttpError as e:
             print(f"Error fetching channel stats: {e}")
+        
         return {'subscriber_count': 0, 'total_views': 0, 'video_count': 0}
     
     def _parse_video(self, item: Dict) -> Dict:
@@ -95,6 +105,8 @@ class YouTubeExtractor:
         snippet = item.get('snippet', {})
         content = item.get('contentDetails', {})
         stats = item.get('statistics', {})
+        
+        # Parse ISO 8601 duration
         duration_iso = content.get('duration', 'PT0S')
         duration_seconds = isodate.parse_duration(duration_iso).total_seconds()
         
@@ -113,31 +125,42 @@ class YouTubeExtractor:
             'collected_at': datetime.now().isoformat()
         }
     
-    def collect_by_categories(self, category_ids: List[str] = None, videos_per_category: int = 30) -> pd.DataFrame:
+    def collect_by_categories(self, category_ids: List[str] = None, 
+                             videos_per_category: int = 30) -> pd.DataFrame:
         """Main collection function."""
         if category_ids is None:
             category_ids = list(self.CATEGORIES.keys())
         
         all_videos = []
+        
         for cat_id in category_ids:
             cat_name = self.CATEGORIES.get(cat_id, 'Unknown')
             print(f"Collecting {cat_name}...")
+            
             video_ids = self.search_videos(cat_id, videos_per_category)
             if not video_ids:
                 continue
+            
             videos = self.get_video_details(video_ids)
+            
+            # Fetch channel stats for unique channels
             unique_channels = list(set([v['channel_id'] for v in videos]))
             channel_stats = {}
-            for ch_id in unique_channels[:10]:
+            for ch_id in unique_channels[:10]:  # sample first 10 to save quota
                 stats = self.get_channel_stats(ch_id)
                 channel_stats[ch_id] = stats
                 time.sleep(0.1)
+            
+            # Add channel stats to videos
             for video in videos:
                 ch_id = video['channel_id']
                 if ch_id in channel_stats:
                     video.update(channel_stats[ch_id])
+            
             all_videos.extend(videos)
-            time.sleep(1)
+            
+            time.sleep(1)  # be nice to the API
+        
         df = pd.DataFrame(all_videos)
         print(f"Collected {len(df)} videos")
         return df
@@ -147,8 +170,10 @@ class YouTubeExtractor:
         if filename is None:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f'youtube_data_{timestamp}.csv'
+        
         filepath = os.path.join('data', 'raw', filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
         df.to_csv(filepath, index=False)
         print(f"Saved to {filepath}")
         return filepath

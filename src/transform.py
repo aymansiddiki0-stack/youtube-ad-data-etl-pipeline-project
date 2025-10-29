@@ -66,7 +66,10 @@ class DataTransformer:
         df['base_ad_rate'] = df['category_name'].map(category_rates).fillna(0.25)
         
         # Categorize channel size by subscriber count
-        df['subscriber_count'] = df.get('subscriber_count', 0).fillna(0)
+        if 'subscriber_count' in df.columns:
+            df['subscriber_count'] = df['subscriber_count'].fillna(0)
+        else:
+            df['subscriber_count'] = 0
         df['channel_tier'] = pd.cut(
             df['subscriber_count'],
             bins=[0, 10000, 100000, 1000000, 10000000, np.inf],

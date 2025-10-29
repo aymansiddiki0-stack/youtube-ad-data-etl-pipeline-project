@@ -38,7 +38,7 @@ jobs:
       - name: Run ETL pipeline
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        run: python src/pipeline.py
+        run: python -m src.pipeline
         continue-on-error: true
       
       - name: Upload processed data

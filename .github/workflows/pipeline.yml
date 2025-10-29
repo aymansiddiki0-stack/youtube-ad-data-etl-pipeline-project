@@ -1,0 +1,49 @@
+name: Youtube Ad Data ETL Pipeline
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  
+  workflow_dispatch:  # Manual trigger
+  
+  push:
+    branches: [ main ]
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run tests
+        run: pytest tests/ -v
+      
+      - name: Run ETL pipeline
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: python src/pipeline.py
+        continue-on-error: true
+      
+      - name: Upload processed data
+        uses: actions/upload-artifact@v3
+        with:
+          name: processed-data
+          path: data/processed/
+          retention-days: 30
